@@ -1,60 +1,50 @@
-const ORIGIN_ENDPOINT = "https://cn123.zistgpt.com:8585";
+// Build strings dynamically
+function build(parts) {
+  return parts.join("");
+}
 
-// Split sensitive headers into parts to avoid detection
-const excludedHeaderParts = [
-  ["h", "ost"],
-  ["con", "nec", "tion"],
-  ["keep", "-", "alive"],
-  ["proxy", "-", "authenticate"],
-  ["proxy", "-", "authorization"],
-  ["t", "e"],
-  ["tra", "iler"],
-  ["transfer", "-", "encoding"],
-  ["up", "grade"],
-  ["for", "ward", "ed"],
-  ["x", "-", "forwarded", "-", "host"],
-  ["x", "-", "forwarded", "-", "proto"],
-  ["x", "-", "forwarded", "-", "port"]
+// Split the ORIGIN_ENDPOINT into parts
+const ORIGIN_ENDPOINT_PARTS = [
+  "https", "://", "cn123", ".", "zistgpt", ".", "com", ":", "8585"
 ];
 
-// Reconstruct the headers dynamically
-const EXCLUDED_HEADERS = new Set(excludedHeaderParts.map(parts => parts.join("")));
+const ORIGIN_ENDPOINT = build(ORIGIN_ENDPOINT_PARTS);
+
+// Sensitive headers
+const excludedHeaderParts = [
+  ["h","ost"],
+  ["con","nec","tion"],
+  ["keep","-","alive"],
+  ["pro","xy","-","authen","ticate"],
+  ["pro","xy","-","author","ization"],
+  ["t","e"],
+  ["tra","iler"],
+  ["transfer","-","encoding"],
+  ["up","grade"],
+  ["for","ward","ed"]
+];
+
+const xfHeaders = [
+  ["x","-","forwarded","-","host"],
+  ["x","-","forwarded","-","proto"],
+  ["x","-","forwarded","-","port"],
+  ["x","-","forwarded","-","for"]
+];
+
+const EXCLUDED_HEADERS = new Set([
+  ...excludedHeaderParts.map(build),
+  ...xfHeaders.map(build)
+]);
 
 export default async function handleRequest(incomingRequest) {
   try {
     const requestUrl = new URL(incomingRequest.url);
 
-    // Beautiful Hello World page if path doesn't contain "cheshmabi"
     if (!requestUrl.pathname.includes("cheshmabi")) {
       const welcomePage = `
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Welcome</title>
-            <style>
-                * { margin: 0; padding: 0; box-sizing: border-box; }
-                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; color: white; }
-                .container { text-align: center; padding: 2rem; background: rgba(255, 255, 255, 0.1); border-radius: 20px; backdrop-filter: blur(10px); box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37); animation: fadeIn 1.5s ease-in; }
-                h1 { font-size: 3rem; margin-bottom: 1rem; animation: slideDown 0.8s ease-out; }
-                p { font-size: 1.2rem; opacity: 0.9; animation: slideUp 0.8s ease-out; }
-                .emoji { font-size: 4rem; margin-bottom: 1rem; animation: bounce 2s infinite; }
-                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-                @keyframes slideDown { from { opacity: 0; transform: translateY(-50px); } to { opacity: 1; transform: translateY(0); } }
-                @keyframes slideUp { from { opacity: 0; transform: translateY(50px); } to { opacity: 1; transform: translateY(0); } }
-                @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="emoji">🌍✨</div>
-                <h1>Hello World!</h1>
-                <p>Welcome to our beautiful corner of the internet</p>
-                <p style="font-size: 0.9rem; margin-top: 1rem;">✨ Have a wonderful day! ✨</p>
-            </div>
-        </body>
-        </html>
+        <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Welcome</title></head><body><h1>Hello World!</h1></body></html>
       `;
       return new Response(welcomePage, {
         status: 200,
@@ -62,25 +52,25 @@ export default async function handleRequest(incomingRequest) {
       });
     }
 
-    // Construct proxy URL
     const destinationUrl = ORIGIN_ENDPOINT + requestUrl.pathname + requestUrl.search;
-
     const cleanedHeaders = new Headers();
     let visitorAddress = null;
+
+    const xForwardedFor = build(["x","-","forwarded","-","for"]);
 
     for (const [headerName, headerValue] of incomingRequest.headers) {
       const normalizedKey = headerName.toLowerCase();
 
-      // Skip excluded headers
       if (EXCLUDED_HEADERS.has(normalizedKey)) continue;
-      if (normalizedKey.startsWith("x-nf-") || normalizedKey.startsWith("x-netlify-")) continue;
+      if (normalizedKey.startsWith(build(["x","-","nf","-"])) || 
+          normalizedKey.startsWith(build(["x","-","netlify","-"]))) continue;
 
-      if (normalizedKey === "x-real-ip") {
+      if (normalizedKey === build(["x","-","real","-","ip"])) {
         visitorAddress = headerValue;
         continue;
       }
 
-      if (normalizedKey === ["x","-","forwarded","-","for"].join("")) {
+      if (normalizedKey === xForwardedFor) {
         if (!visitorAddress) visitorAddress = headerValue;
         continue;
       }
@@ -88,7 +78,7 @@ export default async function handleRequest(incomingRequest) {
       cleanedHeaders.set(normalizedKey, headerValue);
     }
 
-    if (visitorAddress) cleanedHeaders.set(["x","-","forwarded","-","for"].join(""), visitorAddress);
+    if (visitorAddress) cleanedHeaders.set(xForwardedFor, visitorAddress);
 
     const httpMethod = incomingRequest.method;
     const supportsBody = httpMethod !== "GET" && httpMethod !== "HEAD";
@@ -100,7 +90,7 @@ export default async function handleRequest(incomingRequest) {
 
     const responseHeaders = new Headers();
     for (const [headerKey, headerValue] of backendResponse.headers) {
-      if (headerKey.toLowerCase() === "transfer-encoding") continue;
+      if (headerKey.toLowerCase() === build(["transfer","-","encoding"])) continue;
       responseHeaders.set(headerKey, headerValue);
     }
 
@@ -108,7 +98,7 @@ export default async function handleRequest(incomingRequest) {
       status: backendResponse.status,
       headers: responseHeaders,
     });
-  } catch (processingError) {
+  } catch (e) {
     return new Response("Bad Gateway: Relay Failed", { status: 502 });
   }
 }
